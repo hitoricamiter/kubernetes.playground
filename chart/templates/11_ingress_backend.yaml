@@ -1,0 +1,29 @@
+
+{{- if .Values.ingress.enabled }}
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.backend.host }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.backend.productsPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-svc-1
+                port:
+                  number: {{ .Values.backendOne.service.port }}
+          - path: {{ .Values.ingress.backend.welcomePath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-svc-2
+                port:
+                  number: {{ .Values.backendTwo.service.port }}
+
+{{- end }} 

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: {{ .Values.frontend.image }}:{{ .Values.frontend.tag }}
+          ports:
+            - containerPort: {{ .Values.frontend.service.port }}
+          volumeMounts:
+            - name: html-volume
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+      volumes:
+        - name: html-volume
+          configMap:
+            name: frontend-html

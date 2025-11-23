@@ -1,0 +1,25 @@
+gitlabUrl: https://gitlab.com/
+runnerToken: glrt-P3ZYvTGWu27FCCTnP8xI8W86MQpwOjE5ZmJleAp0OjMKdTppeGxtYhg.01.1j01dnbgc
+
+rbac:
+  create: true
+  rules:
+   - apiGroups: ["*"]
+     resources: ["*"]
+     verbs: ["*"]
+  clusterWideAccess: true
+
+serviceAccount:
+  create: true
+  name: "runner"
+
+runners:
+  config: |
+    [[runners]]
+
+      [runners.kubernetes]
+        namespace = "{{.Release.Namespace}}"
+        image = "alpine"
+        service_account = "runner"
+
+

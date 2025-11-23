@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-svc
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: "{{ .Values.frontend.service.lbIP }}"
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+    - port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.service.port }}
+      protocol: TCP

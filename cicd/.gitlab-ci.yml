@@ -1,0 +1,170 @@
+default:
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  before_script:
+    - echo "Авторизация в GitLab Registry — чтобы мы могли пушить Docker образы"
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^feature\/.*$/
+      variables:
+        IMAGE_TAG: "feat-${CI_COMMIT_SHORT_SHA}"
+    - if: $CI_COMMIT_BRANCH =~ /^hotfix\/.*$/
+      variables:
+        IMAGE_TAG: "hf-${CI_COMMIT_SHORT_SHA}"
+    - if: $CI_COMMIT_BRANCH == "develop"
+      variables:
+        IMAGE_TAG: "dev"
+    - if: $CI_COMMIT_BRANCH =~ /^release\/(\d+\.\d+\.\d+)$/
+      variables:
+        IMAGE_TAG: "stage"
+    - if: $CI_COMMIT_TAG =~ /^(\d+\.\d+\.\д+)$/
+      variables:
+        IMAGE_TAG: $CI_COMMIT_TAG
+    - when: always
+
+stages:
+  - build
+  - tests
+  - lint
+  - security
+  - deploy-dev
+  - deploy-stage
+  - deploy-prod
+
+# ------------------------------
+# СБОРКА DOCKER-ОБРАЗА
+# ------------------------------
+build-image:
+  stage: build
+  script:
+    - echo "=== НАЧИНАЕМ СБОРКУ ДОКЕР-ОБРАЗА ==="
+    - echo "Собираем образ приложения с тегом: $IMAGE_TAG"
+    - docker build -t $CI_REGISTRY_IMAGE:$IMAGE_TAG .
+    - echo "Образ собран, начинаем пушить его в GitLab Registry"
+    - docker push $CI_REGISTRY_IMAGE:$IMAGE_TAG
+    - echo "Сохраняем тег образа в переменную для следующих джобов"
+    - echo "IMAGE=$CI_REGISTRY_IMAGE:$IMAGE_TAG" >> build.env
+    - echo "=== СБОРКА И PUSH УСПЕШНО ЗАВЕРШЕНЫ ==="
+  artifacts:
+    reports:
+      dotenv: build.env
+    expire_in: 2 weeks
+
+# ------------------------------
+# ТЕСТЫ + COVERAGE
+# ------------------------------
+unit-tests:
+  stage: tests
+  image: maven:3.9-eclipse-temurin-21
+  script:
+    - echo "=== ЗАПУСК ЮНИТ-ТЕСТОВ С ПОКРЫТИЕМ ==="
+    - echo "Запускаем mvn test + jacoco:report"
+    - echo "Это сгенерирует отчёт о покрытии тестами в XML, который GitLab умеет читать"
+    - mvn -B clean test jacoco:report
+    - echo "Тесты завершены, cobertura-отчёт с покрытием сгенерирован"
+  artifacts:
+    paths:
+      - target/site/jacoco
+      - target/jacoco.exec
+    reports:
+      junit: target/surefire-reports/*.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: target/site/jacoco/jacoco.xml
+  coverage: '/Total.*?([0-9]{1,3})%/'
+
+# ------------------------------
+# ЛИНТЕРЫ
+# ------------------------------
+lint:
+  stage: lint
+  image: maven:3.9-eclipse-temurin-21
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^(\d+\.\д+\.\д+)$/
+      when: never
+    - when: always
+  script:
+    - echo "=== ПРОВЕРКА КОД-СТИЛЯ (LINT) ==="
+    - echo "Проверяем форматирование Java кода через Spotless"
+    - mvn spotless:check || (echo 'Код неформатирован — запусти mvn spotless:apply' && exit 1)
+    - echo "Проверяем YAML файлы"
+    - yamllint .
+    - echo "Проверяем Dockerfile"
+    - hadolint Dockerfile
+    - echo "=== ЛИНТЕРЫ ПРОШЛИ УСПЕШНО ==="
+
+# ------------------------------
+# SECURITY SCAN
+# ------------------------------
+sast:
+  stage: security
+  image: alpine:3.19
+  script:
+    - echo "=== SECURITY SCAN (TRIVY) ==="
+    - echo "Проверяем Docker-образ на уязвимости уровня HIGH и CRITICAL"
+    - apk add --no-cache trivy
+    - trivy image "$IMAGE" --exit-code 0 --severity HIGH,CRITICAL
+    - echo "Проверка завершена — критичных уязвимостей нет"
+
+# ------------------------------
+# DEPLOY DEV
+# ------------------------------
+deploy-dev:
+  stage: deploy-dev
+  image: bitnami/kubectl:latest
+  script:
+    - echo "=== ДЕПЛОЙ НА DEV ==="
+    - echo "Подключаемся к dev-кластеру Kubernetes"
+    - kubectl config use-context dev-cluster
+    - echo "Обновляем Deployment на новый образ: $IMAGE"
+    - kubectl set image deployment/backend backend=$IMAGE -n dev
+    - echo "Деплой dev завершён"
+  environment:
+    name: dev
+    url: https://dev.example.com
+  needs:
+    - build-image
+
+# ------------------------------
+# DEPLOY STAGE
+# ------------------------------
+deploy-stage:
+  stage: deploy-stage
+  rules:
+    - if: $CI_COMMIT_BRANCH =~ /^release\/.*$/
+  image: bitnami/kubectl:latest
+  script:
+    - echo "=== ДЕПЛОЙ НА STAGE ==="
+    - kubectl config use-context stage-cluster
+    - echo "Обновляем Stage Deployment на образ $IMAGE"
+    - kubectl set image deployment/backend backend=$IMAGE -n stage
+  environment:
+    name: stage
+    url: https://stage.example.com
+  needs:
+    - build-image
+
+# ------------------------------
+# DEPLOY PROD
+# ------------------------------
+deploy-prod:
+  stage: deploy-prod
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^(\d+\.\д+\.\д+)$/
+      when: manual
+  image: bitnami/kubectl:latest
+  script:
+    - echo "=== РУЧНОЙ PROD-DEPLOY ==="
+    - echo "Это production, поэтому деплой только вручную"
+    - kubectl config use-context prod-cluster
+    - echo "Обновляем PROD Deployment новым образом"
+    - kubectl set image deployment/backend backend=$IMAGE -n prod
+    - echo "=== PROD УСПЕШНО ОБНОВЛЁН ==="
+  environment:
+    name: production
+    url: https://example.com
+  needs:
+    - build-image

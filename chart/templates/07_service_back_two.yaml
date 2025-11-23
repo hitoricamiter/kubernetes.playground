@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc-2
+  annotations:
+    metallb.universe.tf/loadBalancerIPs: "{{ .Values.backendTwo.service.lbIP }}"
+spec:
+  type: LoadBalancer
+  selector:
+    app: server2
+  ports:
+    - port: {{ .Values.backendTwo.service.port }}
+      targetPort: {{ .Values.backendTwo.service.port }}
+      protocol: TCP

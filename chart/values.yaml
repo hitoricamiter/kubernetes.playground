@@ -1,0 +1,68 @@
+# ======================================
+# PostgreSQL
+# ======================================
+postgres:
+  enabled: true
+  image: "postgres"
+  tag: "15"
+  replicas: 1
+
+  pvc:
+    size: "1Gi"
+
+  credentials:
+    username: "postgres"
+    password: "postgres"
+    database: "microb"
+
+# ======================================
+# Backend 1 (Products)
+# ======================================
+backendOne:
+  replicas: 1
+  image: "andreyrf98/backend-one-image"
+  tag: "0.0.1"
+
+  service:
+    port: 8081
+    lbIP: "192.168.10.244"
+
+# ======================================
+# Backend 2 (Welcome)
+# ======================================
+backendTwo:
+  replicas: 2
+  image: "andreyrf98/backend-two-image"
+  tag: "0.0.1"
+
+  service:
+    port: 8082
+    lbIP: "192.168.10.245"
+
+# ======================================
+# Frontend (nginx)
+# ======================================
+frontend:
+  replicas: 2
+  image: "andreyrf98/frontend-image"
+  tag: "0.0.1"
+  service:
+    port: 80
+    lbIP: "192.168.10.246"
+
+# ======================================
+# Ingress
+# ======================================
+ingress:
+  className: "nginx"
+  enabled: true
+
+  backend:
+    host: "api.playground.zaikin.ru"
+
+    productsPath: "/products"
+    welcomePath: "/welcome"
+
+  frontend:
+    host: "playground.zaikin.ru"
+    rootPath: "/"
